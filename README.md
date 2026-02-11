@@ -66,31 +66,64 @@ You can easily use this MCP server with Claude Desktop for natural language bloc
 
 ### Claude Desktop Configuration Example
 
-To use this MCP server with Claude Desktop, add the following to your Claude Desktop config:
-* You might need to replace the Python env setup with your own.
+To use this MCP server with Claude Desktop (STDIO transport), add the following to your Claude Desktop config.
+Replace paths with your own.
 
 ```json
 {
-    "mcpServers":
-    {
-        "ton-mcp-server":
-        {
-            "command": "/Users/devon/ton-mcp/ton-blockchain-mcp/venv/bin/python",
-            "args":
-            [
-                "-m",
-                "tonmcp.mcp_server"
-            ],
-            "cwd": "/Users/devon/ton-mcp/ton-blockchain-mcp/src",
-            "env":
-            {
-                "PYTHONPATH": "/Users/devon/ton-mcp/ton-blockchain-mcp/src"
+    "mcpServers": {
+        "ton-mcp-server": {
+            "command": "/path/to/ton-blockchain-mcp/venv/bin/python",
+            "args": ["-m", "tonmcp.mcp_server"],
+            "cwd": "/path/to/ton-blockchain-mcp/src",
+            "env": {
+                "PYTHONPATH": "/path/to/ton-blockchain-mcp/src"
             },
             "stdio": true
         }
     }
 }
 ```
+
+For remote/HTTP connections, use the Streamable HTTP transport instead (see below).
+
+---
+
+### Running as HTTP Server (Streamable HTTP)
+
+The server supports the [Streamable HTTP](https://modelcontextprotocol.io) transport — the recommended MCP transport for network-based and production deployments.
+
+**Standalone (FastMCP built-in server):**
+
+```bash
+python -m tonmcp.mcp_server --transport streamable-http
+```
+
+MCP clients connect to `http://localhost:8000/mcp`.
+
+**As a FastAPI app (MCP + REST API):**
+
+```bash
+# via uvicorn
+PYTHONPATH=src uvicorn tonmcp.mcp_server:app --host 0.0.0.0 --port 8000
+
+# or via the built-in runner
+python -m tonmcp.mcp_server runserver
+```
+
+This exposes:
+- `/mcp` — MCP Streamable HTTP endpoint (for MCP clients)
+- `/tools` — REST API: list available tools (requires `Authorization: Bearer <API_KEY>`)
+- `/tools/{tool_id}/call` — REST API: call a tool (requires auth)
+- `/healthz` — health check
+
+**Docker:**
+
+```bash
+docker-compose up
+```
+
+The server will be available at `http://localhost:8000`.
 
 ---
 

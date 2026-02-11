@@ -1,18 +1,13 @@
+import contextlib
 import logging
 import os
 import sys
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request, HTTPException, Depends, Body, Path, Header
-from fastapi.security import APIKeyHeader
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import Request as StarletteRequest
-from starlette.responses import Response as StarletteResponse
 from mcp.server.fastmcp import FastMCP
 from tonmcp.ton_client import TonClient
 from tonmcp.prompts import PromptManager
 from tonmcp.tools import ToolManager, base64url_to_hex
-from mcp.server.sse import SseServerTransport
-from starlette.routing import Mount, Route
 from typing import Any
 
 load_dotenv()
@@ -20,8 +15,8 @@ load_dotenv()
 logging.basicConfig(level=logging.DEBUG, stream=sys.stderr)
 logger = logging.getLogger(__name__)
 
-# Create FastMCP server instance
-tmcp = FastMCP("TON MCP Server")
+# Create FastMCP server instance with streamable HTTP support
+tmcp = FastMCP("TON MCP Server", stateless_http=True, json_response=True)
 
 # --- Test constants for TON MCP tool endpoints ---
 TON_COIN_ADDRESS = "EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c"  # TON coin address on TON Blockchain
@@ -106,8 +101,6 @@ class TonMcpServer:
         async def trend_analysis(**kwargs) -> str:
             return await self.prompt_manager.get_trend_analysis_prompt(**kwargs)
 
-app = FastAPI(title="TON MCP Remote Server", docs_url=None, redoc_url=None)
-
 API_KEY = os.getenv("API_KEY", "changeme")
 
 # Ensure tools/prompts are registered for FastAPI
@@ -121,25 +114,20 @@ def get_api_key(authorization: str = Header(None)):
         raise HTTPException(status_code=403, detail="Forbidden")
     return token
 
-# Create a single SseServerTransport instance for the app
-sse_transport = SseServerTransport("/messages/")
 
-# Remove or comment out the old SSE endpoint and app.mount
-# @app.get("/sse", dependencies=[Depends(get_api_key)])
-# async def sse_endpoint(request: Request):
-#     return await tmcp.sse_app()(request.scope, request.receive, request._send)
-# app.mount("/", tmcp.sse_app())
+# Lifespan context manager for the streamable HTTP session manager
+@contextlib.asynccontextmanager
+async def lifespan(app: FastAPI):
+    async with tmcp.session_manager.run():
+        yield
 
-# Add new /sse and /messages/ endpoints using the shared sse_transport
-async def sse_endpoint(request: Request):
-    async with sse_transport.connect_sse(request.scope, request.receive, request._send) as streams:
-        await tmcp._mcp_server.run(
-            streams[0], streams[1], tmcp._mcp_server.create_initialization_options()
-        )
-    return Response()
 
-app.router.routes.append(Route("/sse", endpoint=sse_endpoint, methods=["GET"]))
-app.router.routes.append(Mount("/messages/", app=sse_transport.handle_post_message))
+app = FastAPI(title="TON MCP Remote Server", docs_url=None, redoc_url=None, lifespan=lifespan)
+
+# Mount the MCP streamable HTTP transport at /mcp
+# Set internal path to "/" so the full endpoint is /mcp (not /mcp/mcp)
+tmcp.settings.streamable_http_path = "/"
+app.mount("/mcp", tmcp.streamable_http_app())
 
 @app.get("/tools", dependencies=[Depends(get_api_key)])
 async def list_tools():
@@ -180,19 +168,26 @@ async def call_tool(tool_id: str = Path(...), body: dict = Body(...)):
 def health():
     return {"status": "ok"}
 
-# CLI entry for local dev (stdio)
+# CLI entry point
 def main():
     api_key = os.getenv("TON_API_KEY")
     logger.debug(f"Starting main with TON_API_KEY={api_key}")
     if not api_key:
         raise ValueError("TON_API_KEY environment variable is required")
     TonMcpServer(api_key)
-    logger.debug("Running FastMCP server on STDIO...")
-    tmcp.run(transport="stdio")
+
+    transport = "stdio"
+    if "--transport" in sys.argv:
+        idx = sys.argv.index("--transport")
+        if idx + 1 < len(sys.argv):
+            transport = sys.argv[idx + 1]
+
+    logger.debug(f"Running FastMCP server with transport={transport}...")
+    tmcp.run(transport=transport)
 
 if __name__ == "__main__":
     if "runserver" in sys.argv:
-        # Run FastAPI app for remote (legacy, not for MCP protocol)
+        # Run FastAPI app with streamable HTTP MCP endpoint + REST API
         import uvicorn
         uvicorn.run("tonmcp.mcp_server:app", host="0.0.0.0", port=int(os.getenv("PORT", 8000)), reload=True)
     else:
