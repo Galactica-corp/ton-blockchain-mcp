@@ -18,10 +18,17 @@ class ServerConfig:
 class TonApiConfig:
     """TON API configuration"""
     api_key: str = ""
-    base_url: str = " https://tonapi.io"
+    base_url: str = "https://tonapi.io"
     timeout: int = 30
     max_retries: int = 3
     rate_limit: int = 100  # requests per minute
+
+
+@dataclass
+class GeckoTerminalConfig:
+    """GeckoTerminal API configuration"""
+    base_url: str = "https://api.geckoterminal.com/api/v2"
+    rate_limit: int = 30  # requests per minute (free tier)
 
 
 @dataclass
@@ -43,6 +50,7 @@ class ConfigManager:
         """Load configuration from file or environment"""
         self.server = ServerConfig()
         self.ton_api = TonApiConfig()
+        self.gecko_terminal = GeckoTerminalConfig()
         self.analysis = AnalysisConfig()
 
         # Load from file if exists
@@ -68,6 +76,12 @@ class ConfigManager:
                 if hasattr(self.ton_api, key):
                     setattr(self.ton_api, key, value)
 
+        if "gecko_terminal" in config_data:
+            gecko_data = config_data["gecko_terminal"]
+            for key, value in gecko_data.items():
+                if hasattr(self.gecko_terminal, key):
+                    setattr(self.gecko_terminal, key, value)
+
         if "analysis" in config_data:
             analysis_data = config_data["analysis"]
             for key, value in analysis_data.items():
@@ -85,6 +99,9 @@ class ConfigManager:
         self.ton_api.api_key = os.getenv("TON_API_KEY", self.ton_api.api_key)
         self.ton_api.base_url = os.getenv("TON_API_URL", self.ton_api.base_url)
         self.ton_api.timeout = int(os.getenv("TON_API_TIMEOUT", self.ton_api.timeout))
+
+        # GeckoTerminal config
+        self.gecko_terminal.base_url = os.getenv("GECKO_API_URL", self.gecko_terminal.base_url)
 
         # Analysis config
         self.analysis.max_transactions_analysis = int(os.getenv("MAX_TX_ANALYSIS", self.analysis.max_transactions_analysis))
@@ -105,6 +122,10 @@ class ConfigManager:
                 "max_retries": self.ton_api.max_retries,
                 "rate_limit": self.ton_api.rate_limit
             },
+            "gecko_terminal": {
+                "base_url": self.gecko_terminal.base_url,
+                "rate_limit": self.gecko_terminal.rate_limit
+            },
             "analysis": {
                 "max_transactions_analysis": self.analysis.max_transactions_analysis,
                 "default_timeframe": self.analysis.default_timeframe,
@@ -123,5 +144,6 @@ class ConfigManager:
         return {
             "server": self.server.__dict__,
             "ton_api": self.ton_api.__dict__,
+            "gecko_terminal": self.gecko_terminal.__dict__,
             "analysis": self.analysis.__dict__
         }
