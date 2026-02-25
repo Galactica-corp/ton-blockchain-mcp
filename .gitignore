@@ -1,3 +1,5 @@
 .env 
 .github
 .dockerignore
+.DS_Store
+.claude/
