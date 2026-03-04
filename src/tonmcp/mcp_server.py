@@ -192,13 +192,25 @@ class TonMcpServer:
         # 14. get_staking_info
         @tmcp.tool(
             description=(
-                "Get staking information. Without address: lists all available staking pools with APY. "
-                "With address: shows the staking positions for that specific wallet."
+                "Get staking information. Without address: lists available staking pools "
+                "(ranked by TVL by default, paginated). "
+                "With address: shows the staking positions for that specific wallet. "
+                "sort_by: 'tvl' (default), 'apy', 'nominators', 'min_stake'. "
+                "limit: pools per page (1-100, default 20). "
+                "offset: starting position for pagination (default 0). "
+                "Use 'has_more' and 'offset' from response to fetch next pages."
             )
         )
-        async def get_staking_info(address: str = None) -> Any:
+        async def get_staking_info(
+            address: str = None,
+            sort_by: str = "tvl",
+            limit: int = 20,
+            offset: int = 0,
+        ) -> Any:
             """Get staking pools or positions."""
-            return await self.tool_manager.get_staking_info(address=address)
+            return await self.tool_manager.get_staking_info(
+                address=address, sort_by=sort_by, limit=limit, offset=offset
+            )
 
         # 15. get_nft_info
         @tmcp.tool(

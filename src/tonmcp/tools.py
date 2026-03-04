@@ -803,8 +803,23 @@ class ToolManager:
     # 14. get_staking_info
     # =================================================================
 
-    async def get_staking_info(self, address: str = None) -> Dict[str, Any]:
-        """Dual mode: list staking pools (no address) or show staking positions (with address)."""
+    _STAKING_SORT_KEYS = {
+        "tvl": ("total_amount", True),
+        "apy": ("apy", True),
+        "nominators": ("current_nominators", True),
+        "min_stake": ("min_stake", False),
+    }
+
+    async def get_staking_info(
+        self,
+        address: str = None,
+        sort_by: str = "tvl",
+        limit: int = 20,
+        offset: int = 0,
+    ) -> Dict[str, Any]:
+        """Dual mode: list staking pools (no address) or show staking positions (with address).
+        For pool listing: sort_by (tvl|apy|nominators|min_stake), limit (1-100), offset for pagination.
+        """
         try:
             if address:
                 assert_full_address(address)
@@ -846,12 +861,28 @@ class ToolManager:
                         "cycle_end": pool.get("cycle_end"),
                     })
 
-                # Sort by APY descending
-                formatted.sort(key=lambda x: float(x.get("apy") or 0), reverse=True)
+                # Sort by chosen field
+                sort_key, descending = self._STAKING_SORT_KEYS.get(
+                    sort_by, self._STAKING_SORT_KEYS["tvl"]
+                )
+                formatted.sort(
+                    key=lambda x: float(x.get(sort_key) or 0), reverse=descending
+                )
+
+                # Pagination
+                total = len(formatted)
+                effective_limit = max(1, min(limit, 100))
+                effective_offset = max(0, min(offset, total))
+                page = formatted[effective_offset : effective_offset + effective_limit]
 
                 return {
-                    "available_pools": formatted,
-                    "total_pools": len(formatted),
+                    "available_pools": page,
+                    "total_pools": total,
+                    "showing": len(page),
+                    "offset": effective_offset,
+                    "limit": effective_limit,
+                    "sort_by": sort_by,
+                    "has_more": effective_offset + effective_limit < total,
                     "implementations": result.get("implementations", {}),
                 }
         except ValueError as e:

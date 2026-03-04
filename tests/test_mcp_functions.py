@@ -359,17 +359,47 @@ async def test_blockchain_status(tools: ToolManager):
 
 
 async def test_staking_info(tools: ToolManager):
-    sep("TEST: get_staking_info (list pools)")
-    result = await tools.get_staking_info()
+    sep("TEST: get_staking_info (list pools, pagination & sorting)")
 
+    # Default: sorted by TVL, page 1
+    result = await tools.get_staking_info()
     if "error" in result:
         print(f"  ERROR: {result['error']}")
         return False
 
     pools = result.get("available_pools", [])
-    print(f"  Total pools: {result.get('total_pools')}")
+    total = result.get("total_pools", 0)
+    showing = result.get("showing", 0)
+    print(f"  Total pools: {total}, showing: {showing}, sort_by: {result.get('sort_by')}")
+    print(f"  has_more: {result.get('has_more')}, offset: {result.get('offset')}, limit: {result.get('limit')}")
     for p in pools[:5]:
-        print(f"    {p.get('name', 'N/A')}: APY={p.get('apy')}%, min={p.get('min_stake')} TON, verified={p.get('verified')}")
+        print(f"    {p.get('name', 'N/A')}: TVL={p.get('total_amount'):.0f} TON, APY={p.get('apy')}%, verified={p.get('verified')}")
+
+    assert showing <= 20, f"Default limit should be 20, got {showing}"
+    assert result.get("sort_by") == "tvl"
+
+    # Verify TVL descending order
+    tvls = [p.get("total_amount", 0) for p in pools]
+    assert tvls == sorted(tvls, reverse=True), "Pools should be sorted by TVL descending"
+
+    # Test sort by APY
+    result_apy = await tools.get_staking_info(sort_by="apy", limit=5)
+    pools_apy = result_apy.get("available_pools", [])
+    apys = [float(p.get("apy") or 0) for p in pools_apy]
+    assert apys == sorted(apys, reverse=True), "Pools should be sorted by APY descending"
+    print(f"  Sort by APY top: {pools_apy[0].get('name', 'N/A')} APY={pools_apy[0].get('apy')}%")
+
+    # Test pagination (page 2)
+    if result.get("has_more"):
+        result_p2 = await tools.get_staking_info(limit=20, offset=20)
+        pools_p2 = result_p2.get("available_pools", [])
+        print(f"  Page 2: showing={result_p2.get('showing')}, offset={result_p2.get('offset')}")
+        assert result_p2.get("offset") == 20
+        # Pages should not overlap
+        addrs_p1 = {p.get("address") for p in pools}
+        addrs_p2 = {p.get("address") for p in pools_p2}
+        assert not addrs_p1 & addrs_p2, "Pages should not overlap"
+
     print("  PASS")
     return True
 
